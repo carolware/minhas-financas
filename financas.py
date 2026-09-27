@@ -1,21 +1,14 @@
-#!/usr/bin/env python3
-"""
-Minhas Finanças — controle de contas a pagar, divisão com parceiro(a) e orçamento.
-Aplicativo de desktop (Tkinter). Os dados são salvos em 'financas_data.json',
-na mesma pasta deste script, e permanecem lá mesmo depois de fechar o programa.
-"""
-
 import json
 import os
+import sys
 import time
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 
-# --------------------------------------------------------------------------
-# Armazenamento
-# --------------------------------------------------------------------------
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if getattr(sys, "frozen", False):
+    BASE_DIR = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "financas_data.json")
 
 CATEGORIAS = [
@@ -64,11 +57,6 @@ def fmt_money(v):
 
 
 def effective_amount(bill):
-    """Valor que realmente conta no resumo/orçamento nesta parcela.
-    Quando a conta tem parcelas (ex.: 6x), o valor informado é o total da
-    compra, então aqui dividimos pelo número de parcelas — só o valor da
-    parcela atual deve impactar o orçamento, não a compra inteira.
-    """
     total_parc = bill.get("installments_total", 1) or 1
     return bill["amount"] / total_parc
 
@@ -94,21 +82,10 @@ def is_fully_paid(bill):
 
 
 def is_paid_by_you(bill):
-    """Usado no resumo (A pagar/Pago) e nos filtros da lista: considera
-    somente o SEU pagamento, independente de o parceiro já ter pago a
-    parte dele ou não. Uma conta dividida que você já pagou conta como
-    'paga' pra você mesmo que o parceiro ainda esteja devendo.
-    """
     return bool(bill.get("paid_you", False))
 
 
 def build_status_text(bill, partner_name):
-    """Monta o texto da coluna Status.
-    Observação: evitamos símbolos especiais (como ✓/✗) porque, em algumas
-    combinações de fonte/sistema, o Tk os exibe como texto literal
-    "\\u2713"/"\\u2717" em vez do símbolo — por isso usamos palavras simples
-    (pago/pendente), que sempre renderizam corretamente.
-    """
     if bill.get("split"):
         you_txt = "pago" if bill.get("paid_you") else "pendente"
         partner_txt = "pago" if bill.get("paid_partner") else "pendente"
@@ -161,12 +138,6 @@ class FinancasApp(tk.Tk):
         self.minsize(760, 680)
         self.configure(bg=BG)
 
-        # Abre maximizado por padrão: em telas com escala de fonte maior
-        # (comum no Windows, 125%/150%), o conteúdo fica mais alto, e uma
-        # janela pequena fixa pode "esconder" a lista lá embaixo mesmo sem
-        # nenhum erro. Maximizado, sempre sobra espaço.
-        # Usamos "after" porque, no Windows, chamar isso antes da janela
-        # ser totalmente desenhada às vezes é ignorado silenciosamente.
         def _maximize():
             try:
                 self.state("zoomed")  # Windows
@@ -221,8 +192,6 @@ class FinancasApp(tk.Tk):
                          padding=(12, 8), font=("Courier New", 10, "bold"))
         style.map("Accent.TButton", background=[("active", ACCENT_DARK)])
 
-        # Estilos específicos do bloco "Seu orçamento", com fonte maior
-        # (pedido do usuário: deixar essa área maior / mais legível).
         style.configure("Budget.TLabelframe", background=BG, bordercolor=BORDER)
         style.configure("Budget.TLabelframe.Label", background=BG, foreground=TEXT,
                          font=("Courier New", 13, "bold"))
@@ -233,9 +202,6 @@ class FinancasApp(tk.Tk):
 
     # -- construção da interface -------------------------------------------
     def _build_ui(self):
-        # A janela toda fica dentro de uma área rolável: se o conteúdo não
-        # couber na tela (telas menores, fontes maiores, etc.), nada fica
-        # escondido — só é preciso rolar com o mouse pra ver o resto.
         scroll_container = ttk.Frame(self)
         scroll_container.pack(fill="both", expand=True)
 
@@ -243,8 +209,6 @@ class FinancasApp(tk.Tk):
         vscroll = ttk.Scrollbar(scroll_container, orient="vertical", command=canvas.yview)
         canvas.configure(yscrollcommand=vscroll.set)
         canvas.pack(side="left", fill="both", expand=True)
-        # A barra (vscroll) só é exibida dinamicamente quando o conteúdo não
-        # couber na janela — ver _update_scrollbar_visibility mais abaixo.
 
         outer = ttk.Frame(canvas, padding=14)
         outer_window = canvas.create_window((0, 0), window=outer, anchor="nw")
@@ -746,16 +710,13 @@ class FinancasApp(tk.Tk):
         self.tree.delete(*self.tree.get_children())
         bills = list(self.data["bills"])
 
-        # Contas fixas (ex.: aluguel) aparecem sempre, independente do filtro.
-        # O filtro "A pagar"/"Pagas" considera apenas o seu pagamento.
         f = self.filter_var.get()
         if f == "pending":
             bills = [b for b in bills if (not is_paid_by_you(b)) or b.get("fixed")]
         elif f == "paid":
             bills = [b for b in bills if is_paid_by_you(b) or b.get("fixed")]
 
-        # Contas fixas ficam sempre no topo da lista.
-        bills.sort(key=lambda b: (not b.get("fixed", False), is_paid_by_you(b), b["id"]))
+        bills.sort(key=lambda b: (not b.get("fixed", False), b["id"]))
 
         partner = self.data["partner_name"]
         for b in bills:
