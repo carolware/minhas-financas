@@ -1,0 +1,33 @@
+name: Build Windows exe
+
+on:
+  workflow_dispatch: 
+  push:
+    branches: [ main ]
+    paths:
+      - "financas_app.py"
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Baixar o código do repositório
+        uses: actions/checkout@v4
+
+      - name: Instalar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar o PyInstaller
+        run: pip install pyinstaller
+
+      - name: Gerar o executável
+        run: pyinstaller --onefile --windowed --name "MinhasFinancas" financas_app.py
+
+      - name: Disponibilizar o .exe para download
+        uses: actions/upload-artifact@v4
+        with:
+          name: MinhasFinancas-windows
+          path: dist/MinhasFinancas.exe
