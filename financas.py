@@ -1,8 +1,19 @@
+#!/usr/bin/env python3
+"""
+Minhas Finanças — controle de contas a pagar, divisão com parceiro(a) e orçamento.
+Aplicativo de desktop (Tkinter). Os dados são salvos em 'financas_data.json',
+na mesma pasta deste script, e permanecem lá mesmo depois de fechar o programa.
+"""
+
 import json
 import os
 import time
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
+
+# --------------------------------------------------------------------------
+# Armazenamento
+# --------------------------------------------------------------------------
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "financas_data.json")
@@ -30,6 +41,7 @@ def load_data():
         data.setdefault("budget", None)
         return data
     except (json.JSONDecodeError, OSError):
+        # Arquivo corrompido: preserva uma cópia e começa do zero para não travar o app.
         backup = DATA_FILE + f".bak-{int(time.time())}"
         try:
             os.rename(DATA_FILE, backup)
@@ -52,6 +64,11 @@ def fmt_money(v):
 
 
 def effective_amount(bill):
+    """Valor que realmente conta no resumo/orçamento nesta parcela.
+    Quando a conta tem parcelas (ex.: 6x), o valor informado é o total da
+    compra, então aqui dividimos pelo número de parcelas — só o valor da
+    parcela atual deve impactar o orçamento, não a compra inteira.
+    """
     total_parc = bill.get("installments_total", 1) or 1
     return bill["amount"] / total_parc
 
@@ -76,7 +93,22 @@ def is_fully_paid(bill):
     return bill.get("paid_you", False)
 
 
+def is_paid_by_you(bill):
+    """Usado no resumo (A pagar/Pago) e nos filtros da lista: considera
+    somente o SEU pagamento, independente de o parceiro já ter pago a
+    parte dele ou não. Uma conta dividida que você já pagou conta como
+    'paga' pra você mesmo que o parceiro ainda esteja devendo.
+    """
+    return bool(bill.get("paid_you", False))
+
+
 def build_status_text(bill, partner_name):
+    """Monta o texto da coluna Status.
+    Observação: evitamos símbolos especiais (como ✓/✗) porque, em algumas
+    combinações de fonte/sistema, o Tk os exibe como texto literal
+    "\\u2713"/"\\u2717" em vez do símbolo — por isso usamos palavras simples
+    (pago/pendente), que sempre renderizam corretamente.
+    """
     if bill.get("split"):
         you_txt = "pago" if bill.get("paid_you") else "pendente"
         partner_txt = "pago" if bill.get("paid_partner") else "pendente"
@@ -104,11 +136,11 @@ def build_status_text(bill, partner_name):
 
 
 # --------------------------------------------------------------------------
-# aplicativo
+# Aplicativo
 # --------------------------------------------------------------------------
 
 # --------------------------------------------------------------------------
-# cores
+# Cores
 # --------------------------------------------------------------------------
 BG = "#f4f5f7"
 CARD_BG = "#ffffff"
@@ -125,9 +157,21 @@ class FinancasApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Minhas Finanças")
-        self.geometry("800x700")
-        self.minsize(700, 600)
+        self.geometry("900x820")
+        self.minsize(760, 680)
         self.configure(bg=BG)
+
+        # Abre maximizado por padrão: em telas com escala de fonte maior
+        # (comum no Windows, 125%/150%), o conteúdo fica mais alto, e uma
+        # janela pequena fixa pode "esconder" a lista lá embaixo mesmo sem
+        # nenhum erro. Maximizado, sempre sobra espaço.
+        try:
+            self.state("zoomed")  # Windows
+        except tk.TclError:
+            try:
+                self.attributes("-zoomed", True)  # Linux (alguns gerenciadores)
+            except tk.TclError:
+                pass
 
         self.data = load_data()
         self.editing_id = None
@@ -145,44 +189,45 @@ class FinancasApp(tk.Tk):
         except tk.TclError:
             pass
 
-        style.configure(".", background=BG, foreground=TEXT, font=("Segoe UI", 10))
+        style.configure(".", background=BG, foreground=TEXT, font=("DejaVu Sans", 10))
         style.configure("TFrame", background=BG)
         style.configure("TLabel", background=BG, foreground=TEXT)
         style.configure("TLabelframe", background=BG, bordercolor=BORDER)
         style.configure("TLabelframe.Label", background=BG, foreground=TEXT,
-                         font=("Segoe UI", 10, "bold"))
+                         font=("DejaVu Sans", 10, "bold"))
         style.configure("TRadiobutton", background=BG)
         style.configure("TCheckbutton", background=BG)
 
-        style.configure("Treeview", rowheight=27, font=("Segoe UI", 10),
+        style.configure("Treeview", rowheight=27, font=("DejaVu Sans", 10),
                          background=CARD_BG, fieldbackground=CARD_BG, bordercolor=BORDER)
-        style.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"))
+        style.configure("Treeview.Heading", font=("DejaVu Sans", 10, "bold"))
 
-        style.configure("Title.TLabel", font=("Segoe UI", 15, "bold"), background=BG)
+        style.configure("Title.TLabel", font=("DejaVu Sans", 15, "bold"), background=BG)
         style.configure("Sub.TLabel", foreground=TEXT_MUTED, background=BG)
-        style.configure("Big.TLabel", font=("Segoe UI", 17, "bold"), background=CARD_BG)
+        style.configure("Big.TLabel", font=("DejaVu Sans", 17, "bold"), background=CARD_BG)
         style.configure("CardTitle.TLabel", foreground=TEXT_MUTED, background=CARD_BG,
-                         font=("Segoe UI", 9))
+                         font=("DejaVu Sans", 9))
         style.configure("Pending.TLabel", foreground=RED, background=CARD_BG,
-                         font=("Segoe UI", 17, "bold"))
+                         font=("DejaVu Sans", 17, "bold"))
         style.configure("Paid.TLabel", foreground=GREEN, background=CARD_BG,
-                         font=("Segoe UI", 17, "bold"))
-        style.configure("Total.TLabel", foreground=ACCENT, background=CARD_BG,
-                         font=("Segoe UI", 17, "bold"))
+                         font=("DejaVu Sans", 17, "bold"))
 
-        style.configure("TButton", padding=6, font=("Segoe UI", 9))
+        style.configure("TButton", padding=6, font=("DejaVu Sans", 9))
         style.configure("Accent.TButton", background=ACCENT, foreground="white",
-                         padding=(12, 8), font=("Segoe UI", 10, "bold"))
+                         padding=(12, 8), font=("DejaVu Sans", 10, "bold"))
         style.map("Accent.TButton", background=[("active", ACCENT_DARK)])
 
+        # Estilos específicos do bloco "Seu orçamento", com fonte maior
+        # (pedido do usuário: deixar essa área maior / mais legível).
         style.configure("Budget.TLabelframe", background=BG, bordercolor=BORDER)
         style.configure("Budget.TLabelframe.Label", background=BG, foreground=TEXT,
-                         font=("Segoe UI", 13, "bold"))
+                         font=("DejaVu Sans", 13, "bold"))
         style.configure("BudgetInfo.TLabel", background=BG, foreground=TEXT,
-                         font=("Segoe UI", 13))
+                         font=("DejaVu Sans", 13))
         style.configure("Horizontal.TProgressbar", background=ACCENT,
                          troughcolor=BORDER, thickness=24)
 
+    # -- construção da interface -------------------------------------------
     def _build_ui(self):
         outer = ttk.Frame(self, padding=14)
         outer.pack(fill="both", expand=True)
@@ -195,12 +240,11 @@ class FinancasApp(tk.Tk):
         # ---- resumo -------------------------------------------------
         summary = ttk.Frame(outer)
         summary.pack(fill="x", pady=(0, 10))
-        for i in range(3):
+        for i in range(2):
             summary.columnconfigure(i, weight=1)
 
         self.lbl_pending = self._summary_card(summary, "A pagar", 0, "Pending.TLabel")
         self.lbl_paid = self._summary_card(summary, "Pago", 1, "Paid.TLabel")
-        self.lbl_total = self._summary_card(summary, "Total", 2, "Total.TLabel")
 
         # ---- parceiro(a) ---------------------------------------------
         partner_bar = ttk.Frame(outer)
@@ -616,11 +660,10 @@ class FinancasApp(tk.Tk):
 
     def refresh_summary(self):
         bills = self.data["bills"]
-        pending = sum(effective_amount(b) for b in bills if not is_fully_paid(b))
-        paid = sum(effective_amount(b) for b in bills if is_fully_paid(b))
+        pending = sum(your_share(b) for b in bills if not is_paid_by_you(b))
+        paid = sum(your_share(b) for b in bills if is_paid_by_you(b))
         self.lbl_pending.configure(text=fmt_money(pending))
         self.lbl_paid.configure(text=fmt_money(paid))
-        self.lbl_total.configure(text=fmt_money(pending + paid))
 
     def refresh_partner(self):
         self.partner_label.configure(text=f"Dividindo com: {self.data['partner_name']}")
@@ -652,14 +695,15 @@ class FinancasApp(tk.Tk):
         bills = list(self.data["bills"])
 
         # Contas fixas (ex.: aluguel) aparecem sempre, independente do filtro.
+        # O filtro "A pagar"/"Pagas" considera apenas o seu pagamento.
         f = self.filter_var.get()
         if f == "pending":
-            bills = [b for b in bills if (not is_fully_paid(b)) or b.get("fixed")]
+            bills = [b for b in bills if (not is_paid_by_you(b)) or b.get("fixed")]
         elif f == "paid":
-            bills = [b for b in bills if is_fully_paid(b) or b.get("fixed")]
+            bills = [b for b in bills if is_paid_by_you(b) or b.get("fixed")]
 
         # Contas fixas ficam sempre no topo da lista.
-        bills.sort(key=lambda b: (not b.get("fixed", False), is_fully_paid(b), b["id"]))
+        bills.sort(key=lambda b: (not b.get("fixed", False), is_paid_by_you(b), b["id"]))
 
         partner = self.data["partner_name"]
         for b in bills:
