@@ -5,7 +5,7 @@ on:
   push:
     branches: [ main ]
     paths:
-      - "financas_app.py"
+      - "financas.py"
 
 jobs:
   build:
@@ -24,7 +24,7 @@ jobs:
         run: pip install pyinstaller
 
       - name: Gerar o executável
-        run: pyinstaller --onefile --windowed --name "MinhasFinancas" financas_app.py
+        run: pyinstaller --onefile --windowed --name "MinhasFinancas" financas.py
 
       - name: Disponibilizar o .exe para download
         uses: actions/upload-artifact@v4
