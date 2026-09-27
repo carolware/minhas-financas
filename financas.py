@@ -165,13 +165,17 @@ class FinancasApp(tk.Tk):
         # (comum no Windows, 125%/150%), o conteúdo fica mais alto, e uma
         # janela pequena fixa pode "esconder" a lista lá embaixo mesmo sem
         # nenhum erro. Maximizado, sempre sobra espaço.
-        try:
-            self.state("zoomed")  # Windows
-        except tk.TclError:
+        # Usamos "after" porque, no Windows, chamar isso antes da janela
+        # ser totalmente desenhada às vezes é ignorado silenciosamente.
+        def _maximize():
             try:
-                self.attributes("-zoomed", True)  # Linux (alguns gerenciadores)
+                self.state("zoomed")  # Windows
             except tk.TclError:
-                pass
+                try:
+                    self.attributes("-zoomed", True)  # Linux (alguns gerenciadores)
+                except tk.TclError:
+                    pass
+        self.after(50, _maximize)
 
         self.data = load_data()
         self.editing_id = None
@@ -189,48 +193,95 @@ class FinancasApp(tk.Tk):
         except tk.TclError:
             pass
 
-        style.configure(".", background=BG, foreground=TEXT, font=("DejaVu Sans", 10))
+        style.configure(".", background=BG, foreground=TEXT, font=("Courier New", 10))
         style.configure("TFrame", background=BG)
         style.configure("TLabel", background=BG, foreground=TEXT)
         style.configure("TLabelframe", background=BG, bordercolor=BORDER)
         style.configure("TLabelframe.Label", background=BG, foreground=TEXT,
-                         font=("DejaVu Sans", 10, "bold"))
+                         font=("Courier New", 10, "bold"))
         style.configure("TRadiobutton", background=BG)
         style.configure("TCheckbutton", background=BG)
 
-        style.configure("Treeview", rowheight=27, font=("DejaVu Sans", 10),
+        style.configure("Treeview", rowheight=27, font=("Courier New", 10),
                          background=CARD_BG, fieldbackground=CARD_BG, bordercolor=BORDER)
-        style.configure("Treeview.Heading", font=("DejaVu Sans", 10, "bold"))
+        style.configure("Treeview.Heading", font=("Courier New", 10, "bold"))
 
-        style.configure("Title.TLabel", font=("DejaVu Sans", 15, "bold"), background=BG)
+        style.configure("Title.TLabel", font=("Courier New", 15, "bold"), background=BG)
         style.configure("Sub.TLabel", foreground=TEXT_MUTED, background=BG)
-        style.configure("Big.TLabel", font=("DejaVu Sans", 17, "bold"), background=CARD_BG)
+        style.configure("Big.TLabel", font=("Courier New", 17, "bold"), background=CARD_BG)
         style.configure("CardTitle.TLabel", foreground=TEXT_MUTED, background=CARD_BG,
-                         font=("DejaVu Sans", 9))
+                         font=("Courier New", 9))
         style.configure("Pending.TLabel", foreground=RED, background=CARD_BG,
-                         font=("DejaVu Sans", 17, "bold"))
+                         font=("Courier New", 17, "bold"))
         style.configure("Paid.TLabel", foreground=GREEN, background=CARD_BG,
-                         font=("DejaVu Sans", 17, "bold"))
+                         font=("Courier New", 17, "bold"))
 
-        style.configure("TButton", padding=6, font=("DejaVu Sans", 9))
+        style.configure("TButton", padding=6, font=("Courier New", 9))
         style.configure("Accent.TButton", background=ACCENT, foreground="white",
-                         padding=(12, 8), font=("DejaVu Sans", 10, "bold"))
+                         padding=(12, 8), font=("Courier New", 10, "bold"))
         style.map("Accent.TButton", background=[("active", ACCENT_DARK)])
 
         # Estilos específicos do bloco "Seu orçamento", com fonte maior
         # (pedido do usuário: deixar essa área maior / mais legível).
         style.configure("Budget.TLabelframe", background=BG, bordercolor=BORDER)
         style.configure("Budget.TLabelframe.Label", background=BG, foreground=TEXT,
-                         font=("DejaVu Sans", 13, "bold"))
+                         font=("Courier New", 13, "bold"))
         style.configure("BudgetInfo.TLabel", background=BG, foreground=TEXT,
-                         font=("DejaVu Sans", 13))
+                         font=("Courier New", 13))
         style.configure("Horizontal.TProgressbar", background=ACCENT,
                          troughcolor=BORDER, thickness=24)
 
     # -- construção da interface -------------------------------------------
     def _build_ui(self):
-        outer = ttk.Frame(self, padding=14)
-        outer.pack(fill="both", expand=True)
+        # A janela toda fica dentro de uma área rolável: se o conteúdo não
+        # couber na tela (telas menores, fontes maiores, etc.), nada fica
+        # escondido — só é preciso rolar com o mouse pra ver o resto.
+        scroll_container = ttk.Frame(self)
+        scroll_container.pack(fill="both", expand=True)
+
+        canvas = tk.Canvas(scroll_container, bg=BG, highlightthickness=0)
+        vscroll = ttk.Scrollbar(scroll_container, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=vscroll.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        # A barra (vscroll) só é exibida dinamicamente quando o conteúdo não
+        # couber na janela — ver _update_scrollbar_visibility mais abaixo.
+
+        outer = ttk.Frame(canvas, padding=14)
+        outer_window = canvas.create_window((0, 0), window=outer, anchor="nw")
+
+        def _update_scrollbar_visibility():
+            canvas.update_idletasks()
+            content_height = outer.winfo_reqheight()
+            visible_height = canvas.winfo_height()
+            if content_height > visible_height:
+                if not vscroll.winfo_ismapped():
+                    vscroll.pack(side="right", fill="y")
+            else:
+                if vscroll.winfo_ismapped():
+                    vscroll.pack_forget()
+
+        def _on_outer_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            _update_scrollbar_visibility()
+        outer.bind("<Configure>", _on_outer_configure)
+
+        def _on_canvas_configure(event):
+            canvas.itemconfig(outer_window, width=event.width)
+            _update_scrollbar_visibility()
+        canvas.bind("<Configure>", _on_canvas_configure)
+
+        def _on_mousewheel(event):
+            if vscroll.winfo_ismapped():
+                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)          # Windows / Mac
+        canvas.bind_all(
+            "<Button-4>",
+            lambda e: canvas.yview_scroll(-1, "units") if vscroll.winfo_ismapped() else None,
+        )  # Linux
+        canvas.bind_all(
+            "<Button-5>",
+            lambda e: canvas.yview_scroll(1, "units") if vscroll.winfo_ismapped() else None,
+        )  # Linux
 
         ttk.Label(outer, text="Minhas Finanças", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
@@ -368,7 +419,8 @@ class FinancasApp(tk.Tk):
 
         columns = ("nome", "categoria", "valor", "status")
         self.tree = ttk.Treeview(
-            list_frame, columns=columns, show="headings", selectmode="browse"
+            list_frame, columns=columns, show="headings", selectmode="browse",
+            height=10,
         )
         self.tree.heading("nome", text="Descrição")
         self.tree.heading("categoria", text="Categoria")
